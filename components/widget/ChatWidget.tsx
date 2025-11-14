@@ -733,7 +733,9 @@ export function ChatWidget({
                           e.stopPropagation();
                           // Create a temporary link to download the image
                           // Use proxied URL for download to avoid CORS issues
+                          if (!message.imageUrl) return;
                           const downloadUrl = getProxiedImageUrl(message.imageUrl) || message.imageUrl;
+                          if (!downloadUrl) return;
                           const link = document.createElement('a');
                           link.href = downloadUrl;
                           link.download = `try-on-${Date.now()}.jpg`;
