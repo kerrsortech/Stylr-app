@@ -31,7 +31,7 @@ export interface Message {
  */
 export async function setSession(session: Session): Promise<void> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `session:${session.sessionId}`;
     await redis.setex(key, SESSION_TTL, JSON.stringify(session));
   } catch (error) {
@@ -45,7 +45,7 @@ export async function setSession(session: Session): Promise<void> {
  */
 export async function getSession(sessionId: string): Promise<Session | null> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `session:${sessionId}`;
     const data = await redis.get(key);
     return data ? JSON.parse(data) : null;
@@ -78,7 +78,7 @@ export async function addMessage(
   message: Message
 ): Promise<void> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `conversation:${sessionId}`;
 
     // Get existing messages
@@ -103,7 +103,7 @@ export async function addMessage(
  */
 export async function getConversation(sessionId: string): Promise<Message[]> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `conversation:${sessionId}`;
     const data = await redis.get(key);
     return data ? JSON.parse(data) : [];
@@ -118,7 +118,7 @@ export async function getConversation(sessionId: string): Promise<Message[]> {
  */
 export async function clearConversation(sessionId: string): Promise<void> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `conversation:${sessionId}`;
     await redis.del(key);
   } catch (error) {

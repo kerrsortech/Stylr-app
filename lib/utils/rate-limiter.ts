@@ -20,7 +20,7 @@ export async function checkRateLimit(
   config: RateLimitConfig = DEFAULT_CONFIG
 ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     const key = `ratelimit:${identifier}:${endpoint}`;
     const ttl = Math.ceil(config.windowMs / 1000);
 

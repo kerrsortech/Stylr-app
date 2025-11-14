@@ -213,7 +213,7 @@ export async function fetchProductsFromSource(
   // Check cache
   if (useCache && source.cacheEnabled) {
     try {
-      const redis = getRedisClient();
+      const redis = await getRedisClient();
       const cacheKey = `catalog:${shopDomain}:${source.id}:${limit}:${offset}`;
       const cached = await redis.get(cacheKey);
       if (cached) {
@@ -246,7 +246,7 @@ export async function fetchProductsFromSource(
     // Cache result
     if (useCache && source.cacheEnabled) {
       try {
-        const redis = getRedisClient();
+        const redis = await getRedisClient();
         const cacheKey = `catalog:${shopDomain}:${source.id}:${limit}:${offset}`;
         const ttl = cacheTtl || source.cacheTtlSeconds || 300;
         await redis.setex(cacheKey, ttl, JSON.stringify(result));

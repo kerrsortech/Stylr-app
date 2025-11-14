@@ -42,6 +42,22 @@ export function ChatWidget({
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
+  // Helper function to proxy S3 images through our API to avoid CORS issues
+  const getProxiedImageUrl = (imageUrl: string | undefined): string | undefined => {
+    if (!imageUrl) return undefined;
+    
+    // Check if it's an S3 URL that needs proxying
+    if (imageUrl.includes('vvapp.s3.ap-south-1.amazonaws.com') || 
+        imageUrl.includes('s3.amazonaws.com') ||
+        imageUrl.includes('s3.ap-south-1.amazonaws.com')) {
+      // Use our proxy endpoint
+      return `${apiUrl}/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+    }
+    
+    // For other URLs, return as-is
+    return imageUrl;
+  };
+
   const [userPhoto, setUserPhoto] = useState<File | null>(null);
   const [userPhotoPreview, setUserPhotoPreview] = useState<string | null>(null);
   const [isTryOnOpen, setIsTryOnOpen] = useState(false);
@@ -696,13 +712,13 @@ export function ChatWidget({
                       <div 
                         className="rounded-lg overflow-hidden border-2 border-gray-300 shadow-lg cursor-pointer hover:border-gray-400 transition-colors"
                         onClick={() => {
-                          // Open image in new window/tab for full view
+                          // Open image in new window/tab for full view (use original URL for download)
                           window.open(message.imageUrl, '_blank');
                         }}
                         title="Click to view full size"
                       >
                         <img
-                          src={message.imageUrl}
+                          src={getProxiedImageUrl(message.imageUrl)}
                           alt="Try-on result"
                           className="w-full h-auto object-contain max-h-96"
                           onError={(e) => {
@@ -716,8 +732,10 @@ export function ChatWidget({
                         onClick={(e) => {
                           e.stopPropagation();
                           // Create a temporary link to download the image
+                          // Use proxied URL for download to avoid CORS issues
+                          const downloadUrl = getProxiedImageUrl(message.imageUrl) || message.imageUrl;
                           const link = document.createElement('a');
-                          link.href = message.imageUrl!;
+                          link.href = downloadUrl;
                           link.download = `try-on-${Date.now()}.jpg`;
                           document.body.appendChild(link);
                           link.click();
@@ -1094,7 +1112,7 @@ export function ChatWidget({
                   ) : standingPhotoPreview ? (
                     <div className="relative">
                       <img
-                        src={standingPhotoPreview}
+                        src={getProxiedImageUrl(standingPhotoPreview) || standingPhotoPreview}
                         alt="Standing photo preview"
                         className="w-full h-64 object-cover rounded-lg border-2 border-green-500 shadow-lg"
                       />
@@ -1158,7 +1176,7 @@ export function ChatWidget({
                   ) : portraitPhotoPreview ? (
                     <div className="relative">
                       <img
-                        src={portraitPhotoPreview}
+                        src={getProxiedImageUrl(portraitPhotoPreview) || portraitPhotoPreview}
                         alt="Portrait photo preview"
                         className="w-full h-64 object-cover rounded-lg border-2 border-green-500 shadow-lg"
                       />

@@ -39,7 +39,7 @@ async function testIntegration() {
   // Test 2: Redis Connection
   console.log('\n2️⃣ Testing Redis Connection...');
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     await redis.ping();
     console.log('   ✅ Redis connection: OK');
     successes.push('Redis connection');

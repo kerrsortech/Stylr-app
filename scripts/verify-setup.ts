@@ -97,7 +97,7 @@ async function verifySetup() {
   // 5. Check Redis connection
   console.log('\n🔴 Checking Redis connection...');
   try {
-    const redis = getRedisClient();
+    const redis = await getRedisClient();
     await redis.ping();
     successes.push('Redis connection: OK');
     console.log('  ✅ Redis connection: OK');
