@@ -125,7 +125,7 @@ function setupRedisEventHandlers(client: Redis): void {
     }
   });
 
-  client.on('reconnecting', (delay) => {
+  client.on('reconnecting', (delay: number) => {
     logger.info(`Redis reconnecting in ${delay}ms`);
   });
 }
