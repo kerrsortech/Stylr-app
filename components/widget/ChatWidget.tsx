@@ -469,8 +469,13 @@ export function ChatWidget({
     setGeneratedImage(null);
 
     try {
-      // Fetch product image
-      const productImageResponse = await fetch(currentProduct.image || '');
+      // Fetch product image (use proxy if from S3 to avoid CORS)
+      const productImageUrl = currentProduct.image || '';
+      const proxiedProductImageUrl = productImageUrl ? (getProxiedImageUrl(productImageUrl) || productImageUrl) : '';
+      const productImageResponse = await fetch(proxiedProductImageUrl);
+      if (!productImageResponse.ok) {
+        throw new Error(`Failed to fetch product image: ${productImageResponse.statusText}`);
+      }
       const productImageBlob = await productImageResponse.blob();
       const productImageFile = new File([productImageBlob], 'product.jpg', {
         type: 'image/jpeg',
@@ -483,8 +488,12 @@ export function ChatWidget({
       if (photoToUse) {
         formData.append('userPhoto', photoToUse);
       } else {
-        // Fetch demo photo from S3 URL
-        const demoPhotoResponse = await fetch(photoUrlToUse);
+        // Fetch demo photo from S3 URL using proxy to avoid CORS issues
+        const proxiedPhotoUrl = getProxiedImageUrl(photoUrlToUse) || photoUrlToUse;
+        const demoPhotoResponse = await fetch(proxiedPhotoUrl);
+        if (!demoPhotoResponse.ok) {
+          throw new Error(`Failed to fetch demo photo: ${demoPhotoResponse.statusText}`);
+        }
         const demoPhotoBlob = await demoPhotoResponse.blob();
         const demoPhotoFile = new File([demoPhotoBlob], 'demo-photo.jpg', {
           type: 'image/jpeg',
@@ -712,8 +721,10 @@ export function ChatWidget({
                       <div 
                         className="rounded-lg overflow-hidden border-2 border-gray-300 shadow-lg cursor-pointer hover:border-gray-400 transition-colors"
                         onClick={() => {
-                          // Open image in new window/tab for full view (use original URL for download)
-                          window.open(message.imageUrl, '_blank');
+                          // Open image in new window/tab for full view (use proxied URL to avoid CORS)
+                          if (!message.imageUrl) return;
+                          const viewUrl = getProxiedImageUrl(message.imageUrl) || message.imageUrl;
+                          window.open(viewUrl, '_blank');
                         }}
                         title="Click to view full size"
                       >

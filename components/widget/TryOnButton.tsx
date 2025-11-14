@@ -37,6 +37,22 @@ export function TryOnButton({
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper function to proxy S3 images through our API to avoid CORS issues
+  const getProxiedImageUrl = (imageUrl: string | undefined | null): string | undefined => {
+    if (!imageUrl) return undefined;
+    
+    // Check if it's an S3 URL that needs proxying
+    if (imageUrl.includes('vvapp.s3.ap-south-1.amazonaws.com') || 
+        imageUrl.includes('s3.amazonaws.com') ||
+        imageUrl.includes('s3.ap-south-1.amazonaws.com')) {
+      // Use our proxy endpoint
+      return `${apiUrl}/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+    }
+    
+    // For other URLs, return as-is
+    return imageUrl;
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -57,8 +73,12 @@ export function TryOnButton({
     setError(null);
 
     try {
-      // Fetch product image
-      const productImageResponse = await fetch(productImageUrl);
+      // Fetch product image (use proxy if from S3 to avoid CORS)
+      const proxiedProductImageUrl = getProxiedImageUrl(productImageUrl) || productImageUrl;
+      const productImageResponse = await fetch(proxiedProductImageUrl);
+      if (!productImageResponse.ok) {
+        throw new Error(`Failed to fetch product image: ${productImageResponse.statusText}`);
+      }
       const productImageBlob = await productImageResponse.blob();
       const productImageFile = new File([productImageBlob], 'product.jpg', {
         type: 'image/jpeg',
@@ -181,11 +201,17 @@ export function TryOnButton({
                 animate={{ opacity: 1, scale: 1 }}
                 className="space-y-4"
               >
-                <img
-                  src={generatedImage}
-                  alt="Generated try-on"
-                  className="w-full rounded-lg"
-                />
+                {generatedImage && (
+                  <img
+                    src={getProxiedImageUrl(generatedImage) || generatedImage}
+                    alt="Generated try-on"
+                    className="w-full rounded-lg"
+                    onError={(e) => {
+                      console.error('Failed to load generated image:', generatedImage);
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                )}
                 <div className="flex gap-2">
                   <Button
                     onClick={() => {
@@ -200,12 +226,17 @@ export function TryOnButton({
                   </Button>
                   <Button
                     onClick={() => {
+                      if (!generatedImage) return;
+                      const downloadUrl = getProxiedImageUrl(generatedImage) || generatedImage;
                       const link = document.createElement('a');
-                      link.href = generatedImage;
+                      link.href = downloadUrl;
                       link.download = 'try-on.jpg';
+                      document.body.appendChild(link);
                       link.click();
+                      document.body.removeChild(link);
                     }}
                     className="flex-1"
+                    disabled={!generatedImage}
                   >
                     Download
                   </Button>
