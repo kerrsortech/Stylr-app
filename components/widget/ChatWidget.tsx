@@ -45,13 +45,19 @@ export function ChatWidget({
   // Helper function to proxy S3 images through our API to avoid CORS issues
   const getProxiedImageUrl = (imageUrl: string | undefined): string | undefined => {
     if (!imageUrl) return undefined;
+    if (!apiUrl) {
+      console.error('apiUrl is not set, cannot proxy image');
+      return undefined;
+    }
     
     // Check if it's an S3 URL that needs proxying
     if (imageUrl.includes('vvapp.s3.ap-south-1.amazonaws.com') || 
         imageUrl.includes('s3.amazonaws.com') ||
         imageUrl.includes('s3.ap-south-1.amazonaws.com')) {
       // Use our proxy endpoint
-      return `${apiUrl}/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+      const proxiedUrl = `${apiUrl}/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+      console.log('Proxying S3 URL:', { original: imageUrl, proxied: proxiedUrl });
+      return proxiedUrl;
     }
     
     // For other URLs, return as-is
@@ -489,9 +495,21 @@ export function ChatWidget({
         formData.append('userPhoto', photoToUse);
       } else {
         // Fetch demo photo from S3 URL using proxy to avoid CORS issues
-        const proxiedPhotoUrl = getProxiedImageUrl(photoUrlToUse) || photoUrlToUse;
+        const proxiedPhotoUrl = getProxiedImageUrl(photoUrlToUse);
+        if (!proxiedPhotoUrl) {
+          throw new Error('Failed to generate proxy URL for demo photo');
+        }
+        console.log('Fetching demo photo via proxy:', proxiedPhotoUrl);
         const demoPhotoResponse = await fetch(proxiedPhotoUrl);
         if (!demoPhotoResponse.ok) {
+          const errorText = await demoPhotoResponse.text().catch(() => 'Unknown error');
+          console.error('Proxy fetch failed:', {
+            status: demoPhotoResponse.status,
+            statusText: demoPhotoResponse.statusText,
+            error: errorText,
+            proxiedUrl: proxiedPhotoUrl,
+            originalUrl: photoUrlToUse,
+          });
           throw new Error(`Failed to fetch demo photo: ${demoPhotoResponse.statusText}`);
         }
         const demoPhotoBlob = await demoPhotoResponse.blob();
