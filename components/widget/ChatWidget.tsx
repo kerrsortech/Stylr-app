@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 import { Send, X, Minimize2, Maximize2, Loader2, Camera, Upload, Image as ImageIcon, Sparkles, ArrowUp, Lock, Mountain, Bot, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils/cn';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { getDemoPhotoUrl, DEMO_PORTRAIT_PHOTO_URL } from '@/lib/config/demo-photos';
+import { getDemoPhotoUrl, DEMO_PORTRAIT_PHOTO_URL, DEMO_STANDING_PHOTO_URL } from '@/lib/config/demo-photos';
+import { mapCategoryToType, getCategoryConfig } from '@/lib/try-on/category-system';
+import { getAbsoluteImageUrl, getBaseUrl } from '@/lib/utils/url-helper';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -48,6 +51,12 @@ export function ChatWidget({
     if (!apiUrl) {
       console.error('apiUrl is not set, cannot proxy image');
       return undefined;
+    }
+    
+    // Don't proxy local public folder images (they start with /)
+    if (imageUrl.startsWith('/') && !imageUrl.startsWith('//')) {
+      // Local public folder image - return as-is (Next.js handles it)
+      return imageUrl;
     }
     
     // Check if it's an S3 URL that needs proxying
@@ -111,12 +120,24 @@ export function ChatWidget({
     }
   }, [currentProduct]);
 
-  // Load demo photo when try-on dialog opens (for demo purposes)
+  // Load demo photos when try-on dialog opens (for demo purposes)
   useEffect(() => {
-    if (isTryOnOpen && !portraitPhotoPreview && !standingPhotoPreview) {
-      // Load demo photo for demo purposes
+    if (isTryOnOpen) {
+      console.log('Try-on dialog opened, loading demo photos...', {
+        hasPortraitPreview: !!portraitPhotoPreview,
+        hasStandingPreview: !!standingPhotoPreview,
+        portraitUrl: DEMO_PORTRAIT_PHOTO_URL,
+        standingUrl: DEMO_STANDING_PHOTO_URL,
+      });
+      
+      // Always load demo photos when dialog opens (they can be replaced by user uploads)
+      // Load portrait photo
       setPortraitPhotoPreview(DEMO_PORTRAIT_PHOTO_URL);
       setPortraitPhotoS3Url(DEMO_PORTRAIT_PHOTO_URL);
+      
+      // Load standing photo
+      setStandingPhotoPreview(DEMO_STANDING_PHOTO_URL);
+      setStandingPhotoS3Url(DEMO_STANDING_PHOTO_URL);
       
       // Save demo photo to database for this session
       if (apiUrl && sessionId) {
@@ -133,10 +154,13 @@ export function ChatWidget({
         });
       }
       
-      console.log('Loaded demo photo:', DEMO_PORTRAIT_PHOTO_URL);
+      console.log('Demo photos loaded:', { 
+        portrait: DEMO_PORTRAIT_PHOTO_URL, 
+        standing: DEMO_STANDING_PHOTO_URL,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTryOnOpen, portraitPhotoPreview, standingPhotoPreview]);
+  }, [isTryOnOpen]);
 
   // Debug: Log when component renders
   useEffect(() => {
@@ -218,7 +242,13 @@ export function ChatWidget({
       setMessages(prev => {
         const updated = [...prev, assistantMessage];
         
-        // Check if assistant is asking to create a ticket and user confirmed
+        // Check if API indicates ticket confirmation or ticket creation request
+        const shouldShowTicketForm = 
+          data.ticketStage === 'awaiting_confirmation' || 
+          data.ticketStage === 'create' ||
+          (data.wantsTicket && data.ticketStage === 'offer' && userMessage.content.toLowerCase().trim() === 'yes');
+        
+        // Also check if assistant is asking to create a ticket and user confirmed
         const lowerMessage = userMessage.content.toLowerCase().trim();
         const isTicketConfirmation = lowerMessage === 'yes' || lowerMessage === 'y' || lowerMessage === 'sure' || lowerMessage === 'ok' || lowerMessage === 'okay';
         
@@ -237,6 +267,7 @@ export function ChatWidget({
         const isAskingForTicket = data.message.toLowerCase().includes('create a support ticket') || 
                                   data.message.toLowerCase().includes('create a ticket') ||
                                   data.message.toLowerCase().includes('support ticket') ||
+                                  data.message.toLowerCase().includes('fill out the form') ||
                                   data.message.toLowerCase().includes('tell me a bit more about the issue');
         
         // Also check if user's message itself indicates ticket creation
@@ -246,7 +277,7 @@ export function ChatWidget({
                                lowerMessage.includes('need a ticket') ||
                                lowerMessage.includes('support ticket');
         
-        if ((isTicketConfirmation && (wasAskingForTicket || isAskingForTicket)) || userWantsTicket) {
+        if (shouldShowTicketForm || (isTicketConfirmation && (wasAskingForTicket || isAskingForTicket)) || userWantsTicket) {
           setShowTicketForm(true);
         }
         
@@ -277,24 +308,75 @@ export function ChatWidget({
       return;
     }
 
-    // Demo mode: Just simulate ticket creation in UI
-    // Hide the form immediately
+    // Hide the form immediately to show loading state
     setShowTicketForm(false);
-    setTicketCategory('');
-    setTicketMessage('');
     
-    // Add success message to chat
-    const successMessage: Message = {
-      role: 'assistant',
-      content: `Your ticket has been submitted successfully. You will receive a confirmation email soon, and our team will get back to you within 24 hours.`,
+    // Add user message showing what they submitted
+    const userTicketMessage: Message = {
+      role: 'user',
+      content: `Ticket: ${ticketCategory} - ${ticketMessage}`,
       timestamp: Date.now(),
     };
-    setMessages(prev => [...prev, successMessage]);
-    
-    // Reset createdTicketId after a delay to allow creating another ticket
-    setTimeout(() => {
-      setCreatedTicketId(null);
-    }, 1000);
+    setMessages(prev => [...prev, userTicketMessage]);
+
+    try {
+      // Call the create-ticket API
+      const response = await fetch(`${apiUrl}/api/create-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          shopDomain,
+          customerId: customerId || undefined,
+          issueCategory: ticketCategory,
+          issueDescription: ticketMessage,
+          currentProduct: currentProduct || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to create ticket' }));
+        throw new Error(errorData.error || 'Failed to create ticket');
+      }
+
+      const data = await response.json();
+      const ticketId = data.ticketId;
+      
+      // Store ticket ID
+      setCreatedTicketId(ticketId);
+      
+      // Add success message to chat
+      const successMessage: Message = {
+        role: 'assistant',
+        content: `Your ticket (${ticketId}) has been submitted successfully. You will receive a confirmation email soon, and our team will get back to you within 24 hours.`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, successMessage]);
+      
+      // Reset form fields
+      setTicketCategory('');
+      setTicketMessage('');
+      
+      // Reset createdTicketId after a delay to allow creating another ticket
+      setTimeout(() => {
+        setCreatedTicketId(null);
+      }, 5000);
+    } catch (error: any) {
+      console.error('Failed to create ticket:', error);
+      
+      // Show error message
+      const errorMessage: Message = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error while creating your ticket: ${error.message || 'Unknown error'}. Please try again.`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      
+      // Show the form again so user can retry
+      setShowTicketForm(true);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -457,10 +539,6 @@ export function ChatWidget({
   };
 
   const handleTryOn = async () => {
-    // For demo: always use demo photo URL (hardcoded)
-    const photoUrlToUse = DEMO_PORTRAIT_PHOTO_URL;
-    const photoToUse = userPhoto || null; // Can be null, we'll fetch from URL
-    
     if (!currentProduct) {
       alert('No product selected. Please select a product first.');
       return;
@@ -475,48 +553,181 @@ export function ChatWidget({
     setGeneratedImage(null);
 
     try {
-      // Fetch product image (use proxy if from S3 to avoid CORS)
-      const productImageUrl = currentProduct.image || '';
-      const proxiedProductImageUrl = productImageUrl ? (getProxiedImageUrl(productImageUrl) || productImageUrl) : '';
+      // Determine product category to select appropriate photo type
+      const productCategory = currentProduct.category || currentProduct.type || 'Fashion Accessory';
+      const categoryType = mapCategoryToType(productCategory);
+      const categoryConfig = getCategoryConfig(categoryType, productCategory);
+      const requiresFullBody = categoryConfig.requiresFullBody;
+      
+      console.log('Try-on photo selection:', {
+        productCategory,
+        categoryType,
+        requiresFullBody,
+        hasStandingPhoto: !!standingPhoto,
+        hasPortraitPhoto: !!portraitPhoto,
+        hasUserPhoto: !!userPhoto,
+        standingPhotoS3Url,
+        portraitPhotoS3Url,
+      });
+
+      // Priority: 1. User uploaded File objects, 2. S3 URLs from uploads, 3. Demo photos
+      let photoToUse: File | null = null;
+      let photoUrlToUse: string | null = null;
+      let photoSource = 'unknown';
+
+      // First priority: Check for uploaded File objects (most recent uploads)
+      if (requiresFullBody && standingPhoto) {
+        // Product needs full body - use standing photo if available
+        photoToUse = standingPhoto;
+        photoSource = 'uploaded-standing-file';
+        console.log('Using uploaded standing photo (File object)');
+      } else if (!requiresFullBody && portraitPhoto) {
+        // Product doesn't need full body - use portrait photo if available
+        photoToUse = portraitPhoto;
+        photoSource = 'uploaded-portrait-file';
+        console.log('Using uploaded portrait photo (File object)');
+      } else if (standingPhoto) {
+        // Fallback: use standing photo if available
+        photoToUse = standingPhoto;
+        photoSource = 'uploaded-standing-file-fallback';
+        console.log('Using uploaded standing photo (File object) as fallback');
+      } else if (portraitPhoto) {
+        // Fallback: use portrait photo if available
+        photoToUse = portraitPhoto;
+        photoSource = 'uploaded-portrait-file-fallback';
+        console.log('Using uploaded portrait photo (File object) as fallback');
+      } else if (userPhoto) {
+        // Use userPhoto if set (from Save Photos)
+        photoToUse = userPhoto;
+        photoSource = 'saved-user-photo';
+        console.log('Using saved user photo (File object)');
+      } else {
+        // No uploaded photos - use demo photos based on category
+        if (requiresFullBody) {
+          photoUrlToUse = DEMO_STANDING_PHOTO_URL;
+          photoSource = 'demo-standing';
+        } else {
+          photoUrlToUse = DEMO_PORTRAIT_PHOTO_URL;
+          photoSource = 'demo-portrait';
+        }
+        console.log('Using demo photo:', {
+          photoType: requiresFullBody ? 'standing' : 'portrait',
+          photoUrl: photoUrlToUse,
+        });
+      }
+
+      // Get product image URL - ensure it's from local Product_images folder
+      let productImageUrl = currentProduct.image || currentProduct.images?.[0] || '';
+      
+      // If it's a relative path (starts with /Product_images/), make it absolute
+      // Works in both development and production (Vercel)
+      if (productImageUrl.startsWith('/Product_images/') || productImageUrl.startsWith('/')) {
+        // Use helper function that works in both dev and production
+        productImageUrl = getAbsoluteImageUrl(productImageUrl);
+      }
+      
+      // Use proxy only for external URLs (S3, etc.), not for local images
+      const proxiedProductImageUrl = productImageUrl && 
+        (productImageUrl.includes('s3.amazonaws.com') || productImageUrl.includes('vvapp.s3'))
+        ? (getProxiedImageUrl(productImageUrl) || productImageUrl)
+        : productImageUrl;
+      
+      console.log('Fetching product image for try-on:', {
+        original: currentProduct.image,
+        resolved: productImageUrl,
+        proxied: proxiedProductImageUrl,
+        productId: currentProduct.id,
+        productName: currentProduct.title || currentProduct.name,
+      });
+      
       const productImageResponse = await fetch(proxiedProductImageUrl);
       if (!productImageResponse.ok) {
-        throw new Error(`Failed to fetch product image: ${productImageResponse.statusText}`);
+        throw new Error(`Failed to fetch product image: ${productImageResponse.statusText} (${productImageResponse.status})`);
       }
       const productImageBlob = await productImageResponse.blob();
-      const productImageFile = new File([productImageBlob], 'product.jpg', {
-        type: 'image/jpeg',
+      
+      // Determine MIME type from response or default to jpeg
+      const productContentType = productImageResponse.headers.get('content-type') || 'image/jpeg';
+      const productFileExtension = productContentType.includes('png') ? 'png' : 
+                                   productContentType.includes('webp') ? 'webp' : 'jpg';
+      
+      const productImageFile = new File([productImageBlob], `product.${productFileExtension}`, {
+        type: productContentType,
+        lastModified: Date.now(),
+      });
+      
+      console.log('Product image file created:', {
+        name: productImageFile.name,
+        size: productImageFile.size,
+        type: productImageFile.type,
+        contentType: productContentType,
       });
 
       // Create form data
       const formData = new FormData();
       
-      // For demo: if no file uploaded, fetch the demo photo from S3 URL
+      // Prepare user photo - use File object if available, otherwise fetch from URL
       if (photoToUse) {
+        // Use uploaded File object directly (most recent upload)
         formData.append('userPhoto', photoToUse);
-      } else {
-        // Fetch demo photo from S3 URL using proxy to avoid CORS issues
-        const proxiedPhotoUrl = getProxiedImageUrl(photoUrlToUse);
-        if (!proxiedPhotoUrl) {
-          throw new Error('Failed to generate proxy URL for demo photo');
-        }
-        console.log('Fetching demo photo via proxy:', proxiedPhotoUrl);
-        const demoPhotoResponse = await fetch(proxiedPhotoUrl);
+        console.log('Added user photo to form data (File object):', {
+          name: photoToUse.name,
+          size: photoToUse.size,
+          type: photoToUse.type,
+          source: photoSource,
+        });
+      } else if (photoUrlToUse) {
+        // Fetch demo photo from URL and convert to File
+        // Use helper function that works in both dev and production (Vercel)
+        const absolutePhotoUrl = photoUrlToUse.startsWith('http') 
+          ? photoUrlToUse 
+          : getAbsoluteImageUrl(photoUrlToUse);
+        
+        console.log('Fetching demo photo from URL:', {
+          original: photoUrlToUse,
+          absolute: absolutePhotoUrl,
+          source: photoSource,
+        });
+        
+        const demoPhotoResponse = await fetch(absolutePhotoUrl);
         if (!demoPhotoResponse.ok) {
           const errorText = await demoPhotoResponse.text().catch(() => 'Unknown error');
-          console.error('Proxy fetch failed:', {
+          console.error('Demo photo fetch failed:', {
             status: demoPhotoResponse.status,
             statusText: demoPhotoResponse.statusText,
             error: errorText,
-            proxiedUrl: proxiedPhotoUrl,
-            originalUrl: photoUrlToUse,
+            photoUrl: absolutePhotoUrl,
           });
           throw new Error(`Failed to fetch demo photo: ${demoPhotoResponse.statusText}`);
         }
         const demoPhotoBlob = await demoPhotoResponse.blob();
-        const demoPhotoFile = new File([demoPhotoBlob], 'demo-photo.jpg', {
-          type: 'image/jpeg',
+        
+        // Determine MIME type from response or default to jpeg
+        const contentType = demoPhotoResponse.headers.get('content-type') || 'image/jpeg';
+        const fileExtension = contentType.includes('png') ? 'png' : 'jpg';
+        
+        const demoPhotoFile = new File([demoPhotoBlob], `demo-${requiresFullBody ? 'standing' : 'portrait'}.${fileExtension}`, {
+          type: contentType,
+          lastModified: Date.now(),
         });
+        
+        // Validate the file before adding to form data
+        if (demoPhotoFile.size === 0) {
+          throw new Error('Demo photo file is empty');
+        }
+        // Note: Demo photos are pre-compressed, so size check not needed
+        
         formData.append('userPhoto', demoPhotoFile);
+        console.log('Added demo photo to form data (fetched from URL):', {
+          name: demoPhotoFile.name,
+          size: demoPhotoFile.size,
+          type: demoPhotoFile.type,
+          contentType,
+          source: photoSource,
+          url: absolutePhotoUrl,
+        });
+      } else {
+        throw new Error('No photo available for try-on');
       }
       // Use new format with productImageCount for multiple images support
       formData.append('productImage0', productImageFile);
@@ -784,30 +995,41 @@ export function ChatWidget({
                   
                   {/* Only show products if user explicitly asked for recommendations */}
                   {message.products && message.products.length > 0 && message.role === 'assistant' && (
-                    <div className="mt-2 space-y-2">
-                      {message.products.slice(0, 3).map((product: any, i: number) => (
-                        <div
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-700 mb-2">Recommended Products:</p>
+                      {message.products.slice(0, 5).map((product: any, i: number) => (
+                        <Link
                           key={`product-${product.id || product.title || i}-${message.timestamp}`}
-                          className="bg-white/50 rounded-lg p-2 text-xs flex items-center gap-2"
+                          href={`/store/products/${product.id}`}
+                          className="block bg-white border border-gray-200 rounded-lg p-3 hover:border-gray-300 hover:shadow-sm transition-all flex items-center gap-3 group"
                         >
-                          {/* Product Thumbnail - Always show on left */}
-                          <img
-                            src={product.image || product.imageUrl || product.thumbnail || 'https://via.placeholder.com/48x48?text=Product'}
-                            alt={product.title || 'Product'}
-                            className="w-12 h-12 object-cover rounded flex-shrink-0"
-                            onError={(e) => {
-                              // Fallback to placeholder if image fails
-                              e.currentTarget.src = 'https://via.placeholder.com/48x48?text=Product';
-                            }}
-                          />
+                          {/* Product Thumbnail - Larger and more prominent */}
+                          <div className="relative w-16 h-16 flex-shrink-0 bg-gray-100 rounded overflow-hidden">
+                            <img
+                              src={product.image || product.imageUrl || product.thumbnail || '/placeholder.svg?height=64&width=64'}
+                              alt={product.title || 'Product'}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              onError={(e) => {
+                                // Fallback to placeholder if image fails
+                                e.currentTarget.src = '/placeholder.svg?height=64&width=64';
+                              }}
+                            />
+                          </div>
                           {/* Product Info */}
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{product.title}</p>
-                            <p className="text-gray-600">
-                              ${(product.price / 100).toFixed(2)}
+                            <p className="font-semibold text-sm text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                              {product.title || product.name}
                             </p>
+                            <p className="text-sm font-bold text-gray-900 mt-0.5">
+                              ${typeof product.price === 'number' ? (product.price / 100).toFixed(2) : product.price}
+                            </p>
+                            {product.category && (
+                              <p className="text-xs text-gray-500 capitalize mt-0.5">
+                                {product.category}
+                              </p>
+                            )}
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   )}
@@ -1145,7 +1367,14 @@ export function ChatWidget({
                       <img
                         src={getProxiedImageUrl(standingPhotoPreview) || standingPhotoPreview}
                         alt="Standing photo preview"
-                        className="w-full h-64 object-cover rounded-lg border-2 border-green-500 shadow-lg"
+                        className="w-full max-h-96 object-contain rounded-lg border-2 border-green-500 shadow-lg bg-gray-100"
+                        onError={(e) => {
+                          console.error('Failed to load standing photo:', standingPhotoPreview);
+                          console.error('Image error details:', e);
+                        }}
+                        onLoad={() => {
+                          console.log('Standing photo loaded successfully:', standingPhotoPreview);
+                        }}
                       />
                       {standingPhotoS3Url && (
                         <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
@@ -1209,7 +1438,14 @@ export function ChatWidget({
                       <img
                         src={getProxiedImageUrl(portraitPhotoPreview) || portraitPhotoPreview}
                         alt="Portrait photo preview"
-                        className="w-full h-64 object-cover rounded-lg border-2 border-green-500 shadow-lg"
+                        className="w-full max-h-96 object-contain rounded-lg border-2 border-green-500 shadow-lg bg-gray-100"
+                        onError={(e) => {
+                          console.error('Failed to load portrait photo:', portraitPhotoPreview);
+                          console.error('Image error details:', e);
+                        }}
+                        onLoad={() => {
+                          console.log('Portrait photo loaded successfully:', portraitPhotoPreview);
+                        }}
                       />
                       {portraitPhotoS3Url && (
                         <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded flex items-center gap-1">

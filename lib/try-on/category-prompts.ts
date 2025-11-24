@@ -154,6 +154,14 @@ const BASE_TEMPLATE = `REFERENCE IMAGES:
 - User image: {{USER_IMAGE_URL}} — preserve identity, face, hair, and skin tone EXACTLY.
 - Product images: {{PRODUCT_IMAGE_URLS}} — use to reproduce colors, textures, logos, hardware, and scale EXACTLY.
 
+CORE GOAL (MOST IMPORTANT):
+Show the REAL PERSON from the user image WEARING the product in a realistic, natural way.
+- The person MUST be wearing/using the product ON their body (on feet, on head, on body, in hands, etc.)
+- This is NOT a product mockup or product photography - it's a REAL PERSON wearing the product
+- NO product props, NO separate product objects, NO floating products, NO products placed next to the person
+- The product must be integrated into the person's appearance - they are wearing it, not standing near it
+- For ALL categories: footwear goes ON feet, clothing goes ON body, accessories go ON person, bags are carried/worn by person
+
 GOAL (CRITICAL):
 Create EXACTLY ONE SINGLE photorealistic studio photograph of EXACTLY ONE person (the same person from the user image) wearing/using the product. 
 - MUST be ONE person only, NO multiple people, NO multiple poses, NO duplicate subjects, NO clones
@@ -243,7 +251,13 @@ CRITICAL OUTPUT REQUIREMENTS:
 - NO multiple people, NO multiple poses, NO composite views
 - Single realistic studio photograph with one person wearing the product
 - Natural standing pose showcasing the product clearly
-- Clean studio background, professional product photography style`;
+- Clean studio background, professional product photography style
+- PRODUCT INTEGRATION: The product MUST be worn/used by the person - NOT shown as props, separate objects, or placed next to the person
+  * Footwear: shoes ON the person's feet
+  * Clothing: garment ON the person's body
+  * Accessories: item ON or IN the person's hands/body
+  * Bags: bag carried/worn by the person
+  * This is a REAL PERSON wearing the product, NOT a product mockup or product photography`;
 
 /**
  * Category-specific instructions to inject into base template

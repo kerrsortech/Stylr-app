@@ -1,10 +1,11 @@
 /**
  * Store Products Helper
- * Fetches products from database for the Nike-style demo store
- * This replaces the hardcoded mock products
+ * Uses unified demo products directly (no database fetching)
+ * All products come from the local demo-products.ts file
  */
 
 import { getProductCatalog } from '@/lib/database/queries';
+import { getAllProducts as getDemoProducts } from '@/lib/store/demo-products';
 
 // Use Demo Store organization shop domain
 // This links the store to the "Stylr Demo Store" organization
@@ -116,115 +117,102 @@ function transformProduct(dbProduct: any): StoreProduct {
 }
 
 /**
- * Get all store products from database
+ * Transform demo product to store product format
+ */
+function transformDemoProductToStoreProduct(demoProduct: any): StoreProduct {
+  // Map color string to color object with hex
+  const colorMap: Record<string, string> = {
+    'black': '#000000',
+    'white': '#FFFFFF',
+    'red': '#DC2626',
+    'blue': '#2563EB',
+    'navy': '#1E3A8A',
+    'navy blue': '#1E3A8A',
+    'grey': '#6B7280',
+    'gray': '#6B7280',
+    'green': '#10B981',
+    'brown': '#92400E',
+    'pink': '#EC4899',
+    'burgundy': '#800020',
+    'beige': '#F5F5DC',
+    'silver': '#C0C0C0',
+    'sky blue': '#87CEEB',
+    'navy/white': '#1E3A8A',
+  };
+  
+  const colorName = (demoProduct.color || '').toLowerCase();
+  const colorHex = colorMap[colorName] || '#000000';
+  
+  // Map category to store category format
+  const categoryMap: Record<string, string> = {
+    'pants': 'men',
+    'shirts': 'men',
+    'shoes': 'men',
+    'coats': 'men',
+    'accessories': 'accessories',
+  };
+  
+  const storeCategory = categoryMap[demoProduct.category?.toLowerCase()] || 'men';
+  
+  return {
+    id: demoProduct.id,
+    name: demoProduct.name,
+    description: demoProduct.description || '',
+    price: demoProduct.price,
+    category: storeCategory,
+    images: demoProduct.images || [],
+    colors: [{ name: demoProduct.color || 'Default', hex: colorHex }],
+    sizes: demoProduct.sizes || ['One Size'],
+    inStock: true,
+    featured: false,
+    tags: [demoProduct.category, demoProduct.type, demoProduct.color].filter(Boolean),
+    vendor: 'Demo Store',
+    type: demoProduct.type,
+  };
+}
+
+/**
+ * Get all store products
+ * Uses unified demo products directly (no database fetching)
  */
 export async function getStoreProducts(): Promise<StoreProduct[]> {
-  try {
-    let products = await getProductCatalog(STORE_SHOP_DOMAIN);
-    
-    // Fallback to test-store if demo-store has no products
-    if (products.length === 0 && STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-      console.log(`No products found in ${STORE_SHOP_DOMAIN}, trying ${FALLBACK_SHOP_DOMAIN}`);
-      products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-    }
-    
-    return products.map(transformProduct);
-  } catch (error) {
-    console.error('Failed to fetch store products:', error);
-    // Try fallback if primary fails
-    try {
-      if (STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-        const products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-        return products.map(transformProduct);
-      }
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError);
-    }
-    return [];
-  }
+  // Use unified demo products directly
+  const demoProducts = getDemoProducts();
+  return demoProducts.map(transformDemoProductToStoreProduct);
 }
 
 /**
  * Get store product by ID
+ * Uses unified demo products directly (no database fetching)
  */
 export async function getStoreProductById(id: string): Promise<StoreProduct | null> {
-  try {
-    let products = await getProductCatalog(STORE_SHOP_DOMAIN);
-    let product = products.find((p) => p.id === id);
-    
-    // Try fallback if not found
-    if (!product && STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-      products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-      product = products.find((p) => p.id === id);
-    }
-    
-    return product ? transformProduct(product) : null;
-  } catch (error) {
-    console.error('Failed to fetch store product:', error);
-    // Try fallback if primary fails
-    try {
-      if (STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-        const products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-        const product = products.find((p) => p.id === id);
-        return product ? transformProduct(product) : null;
-      }
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError);
-    }
-    return null;
-  }
+  const demoProducts = getDemoProducts();
+  const demoProduct = demoProducts.find((p) => p.id === id);
+  return demoProduct ? transformDemoProductToStoreProduct(demoProduct) : null;
 }
 
 /**
  * Get store products by category
+ * Uses unified demo products directly (no database fetching)
  */
 export async function getStoreProductsByCategory(category: string): Promise<StoreProduct[]> {
-  try {
-    let products = await getProductCatalog(STORE_SHOP_DOMAIN);
-    
-    // Fallback to test-store if demo-store has no products
-    if (products.length === 0 && STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-      products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-    }
-    
-    const allProducts = products.map(transformProduct);
-    
-    if (category === 'all') {
-      return allProducts;
-    }
-    
-    return allProducts.filter((p) => p.category.toLowerCase() === category.toLowerCase());
-  } catch (error) {
-    console.error('Failed to fetch store products by category:', error);
-    // Try fallback if primary fails
-    try {
-      if (STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-        const products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-        const allProducts = products.map(transformProduct);
-        if (category === 'all') {
-          return allProducts;
-        }
-        return allProducts.filter((p) => p.category.toLowerCase() === category.toLowerCase());
-      }
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError);
-    }
-    return [];
+  const demoProducts = getDemoProducts();
+  const allProducts = demoProducts.map(transformDemoProductToStoreProduct);
+  
+  if (category === 'all') {
+    return allProducts;
   }
+  
+  return allProducts.filter((p) => p.category.toLowerCase() === category.toLowerCase());
 }
 
 /**
  * Get featured store products
+ * Uses unified demo products directly (no database fetching)
  */
 export async function getFeaturedStoreProducts(): Promise<StoreProduct[]> {
-  try {
-    const products = await getProductCatalog(STORE_SHOP_DOMAIN);
-    return products
-      .filter((p) => p.metadata?.featured === true)
-      .map(transformProduct);
-  } catch (error) {
-    console.error('Failed to fetch featured store products:', error);
-    return [];
-  }
+  const demoProducts = getDemoProducts();
+  // For now, return all products (you can add a featured flag to demo products later)
+  return demoProducts.map(transformDemoProductToStoreProduct);
 }
 

@@ -246,9 +246,22 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    logger.debug("Uploading images to Blob storage", { requestId });
+    logger.debug("Uploading images to Blob storage", { 
+      requestId,
+      userPhotoName: userPhoto.name,
+      userPhotoSize: userPhoto.size,
+      userPhotoType: userPhoto.type,
+      productImageCount: productImages.length,
+    });
+    
     const userPhotoBlob = await put(`try-on/user-${Date.now()}-${userPhoto.name}`, userPhoto, {
       access: "public",
+    });
+    
+    logger.info("User photo uploaded to blob storage", {
+      requestId,
+      blobUrl: userPhotoBlob.url,
+      userPhotoName: userPhoto.name,
     });
 
     const productImageBlobs = await Promise.all(
@@ -258,7 +271,12 @@ export async function POST(request: NextRequest) {
         }),
       ),
     );
-    logger.debug("Images uploaded successfully", { requestId });
+    
+    logger.info("Product images uploaded successfully", {
+      requestId,
+      blobUrls: productImageBlobs.map(b => b.url),
+      productImageCount: productImageBlobs.length,
+    });
 
     // Map detected category to our standardized category type
     const detectedCategory = productMetadata.productCategory || productCategory || "Unknown";
@@ -375,8 +393,16 @@ export async function POST(request: NextRequest) {
     const replicate = new Replicate({ auth: apiKey });
 
     // The prompt still references all product URLs for context
+    // Replicate API expects publicly accessible URLs in the image_input array
     const imageInputArray = [userPhotoBlob.url, productImageBlobs[0].url];
-    logger.debug("Preparing image generation", { requestId, imageInputCount: imageInputArray.length });
+    
+    logger.info("Preparing image generation for Replicate API", { 
+      requestId, 
+      imageInputCount: imageInputArray.length,
+      userPhotoUrl: userPhotoBlob.url.substring(0, 100) + '...', // Log first 100 chars
+      productImageUrl: productImageBlobs[0].url.substring(0, 100) + '...',
+      promptLength: prompt.length,
+    });
 
     const input = {
       size: "2K",
@@ -384,12 +410,16 @@ export async function POST(request: NextRequest) {
       height: 2048,
       prompt: prompt,
       max_images: 1,
-      image_input: imageInputArray,
+      image_input: imageInputArray, // Array of publicly accessible URLs
       aspect_ratio: "4:3",
       sequential_image_generation: "disabled",
     };
 
-    logger.debug("Calling image generation service", { requestId });
+    logger.info("Calling Replicate image generation service", { 
+      requestId,
+      model: "bytedance/seedream-4",
+      imageInputUrls: imageInputArray,
+    });
 
     let output;
     try {

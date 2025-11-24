@@ -5,26 +5,29 @@ export interface ComplementaryMap {
 // Domain knowledge: complementary products
 // When user views a product in one category, recommend items from complementary categories
 const COMPLEMENTARY_PRODUCTS: ComplementaryMap = {
-  'jacket': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'shirt', 't-shirt', 'sweater', 'hoodie', 'belt', 'scarf', 'beanie', 'gloves'],
-  'coat': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'shirt', 't-shirt', 'sweater', 'hoodie', 'belt', 'scarf', 'beanie', 'gloves'],
-  'bomber': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'shirt', 't-shirt', 'sweater', 'hoodie', 'belt'],
+  'jacket': ['shirt', 't-shirt', 'sweater', 'hoodie', 'pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'belt'],
+  'coat': ['shirt', 't-shirt', 'sweater', 'hoodie', 'pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'belt'],
+  'blazer': ['shirt', 't-shirt', 'pants', 'trousers', 'chinos', 'shoes', 'boots', 'belt', 'tie'],
+  'bomber': ['shirt', 't-shirt', 'sweater', 'pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'belt'],
   'denim': ['shirt', 't-shirt', 'sweater', 'hoodie', 'shoes', 'boots', 'sneakers', 'belt', 'jacket', 'coat'],
-  'pants': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'shoes', 'boots', 'sneakers', 'belt'],
+  'pants': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'blazer', 'shoes', 'boots', 'sneakers', 'belt'],
   'jeans': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'shoes', 'boots', 'sneakers', 'belt'],
-  'trousers': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'shoes', 'boots', 'sneakers', 'belt'],
-  'shirt': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'jacket', 'coat', 'belt'],
-  't-shirt': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'jacket', 'coat', 'hoodie'],
-  'sweater': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'jacket', 'coat'],
-  'hoodie': ['pants', 'jeans', 'trousers', 'shoes', 'boots', 'sneakers', 'jacket'],
-  'shoes': ['pants', 'jeans', 'trousers', 'socks', 'shirt', 't-shirt'],
-  'boots': ['pants', 'jeans', 'trousers', 'socks', 'shirt', 't-shirt', 'jacket'],
-  'sneakers': ['pants', 'jeans', 'trousers', 'socks', 'shirt', 't-shirt'],
+  'trousers': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'blazer', 'shoes', 'boots', 'sneakers', 'belt'],
+  'chinos': ['shirt', 't-shirt', 'sweater', 'hoodie', 'jacket', 'coat', 'blazer', 'shoes', 'boots', 'sneakers', 'belt'],
+  'shirt': ['pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'jacket', 'coat', 'blazer', 'belt', 'tie'],
+  't-shirt': ['pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'jacket', 'coat', 'hoodie'],
+  'sweater': ['pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'jacket', 'coat'],
+  'hoodie': ['pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'jacket'],
+  'shoes': ['pants', 'jeans', 'trousers', 'chinos', 'shirt', 't-shirt', 'socks', 'belt'],
+  'boots': ['pants', 'jeans', 'trousers', 'chinos', 'shirt', 't-shirt', 'jacket', 'coat', 'belt'],
+  'sneakers': ['pants', 'jeans', 'trousers', 'chinos', 'shirt', 't-shirt', 'socks'],
+  'formal': ['shirt', 'trousers', 'chinos', 'shoes', 'boots', 'belt', 'tie', 'blazer'],
+  'casual': ['t-shirt', 'hoodie', 'jeans', 'chinos', 'sneakers', 'jacket'],
   'dress': ['shoes', 'boots', 'sneakers', 'bag', 'jacket', 'coat', 'jewelry'],
-  'snowboard': ['bindings', 'boots', 'wax', 'bag', 'helmet', 'goggles'],
-  'ski': ['boots', 'poles', 'goggles', 'helmet', 'gloves'],
-  'watch': ['strap', 'watch box'],
-  'sunglasses': ['case', 'cleaning kit'],
-  'hat': ['sunglasses', 'scarf'],
+  'accessories': ['shirt', 't-shirt', 'pants', 'jeans', 'trousers', 'chinos', 'shoes', 'boots', 'sneakers', 'jacket', 'coat'],
+  'tie': ['shirt', 'blazer', 'trousers', 'chinos', 'shoes', 'boots'],
+  'belt': ['pants', 'jeans', 'trousers', 'chinos', 'shirt', 't-shirt'],
+  'hat': ['sunglasses', 'scarf', 'jacket', 'coat'],
   'bag': ['wallet', 'keychain'],
 };
 
@@ -77,10 +80,22 @@ export function rankProductsByRelevance(
       }
     }
 
-    // Same category: -50 points (penalty - we want complementary, not same category)
-    if (currentCategory === productCategory && score < 150) {
-      score -= 50;
-      reasons.push('Same category (avoided)');
+    // Same category: -200 points (strong penalty - we want complementary, not same category)
+    // This ensures we don't recommend pants when viewing pants, etc.
+    if (currentCategory === productCategory || 
+        (currentCategory.includes('pant') && productCategory.includes('pant')) ||
+        (currentCategory.includes('shirt') && productCategory.includes('shirt')) ||
+        (currentCategory.includes('shoe') && productCategory.includes('shoe'))) {
+      score -= 200; // Strong penalty to avoid same category
+      reasons.push('Same category (strongly avoided)');
+    }
+    
+    // Same type within category: -100 points (e.g., chinos vs jeans when viewing chinos)
+    if (currentProduct.type && product.type && 
+        currentProduct.type.toLowerCase() === product.type.toLowerCase() &&
+        currentCategory === productCategory) {
+      score -= 100;
+      reasons.push('Same type (avoided)');
     }
 
     // Shared tags: +12 points per tag

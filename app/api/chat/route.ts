@@ -6,7 +6,7 @@ import { semanticProductSearch, getProductLimitForQuery } from '@/lib/chatbot/se
 import { rankProductsByRelevance } from '@/lib/chatbot/product-ranker';
 import { extractScenarioContext, recommendCompleteOutfit, isCompleteOutfitQuery } from '@/lib/chatbot/scenario-recommender';
 import { GeminiClient } from '@/lib/ai/gemini-client';
-import { getSession, addMessage, updateSessionActivity, setSession, Session } from '@/lib/cache/session-manager';
+import { getSession, addMessage, updateSessionActivity, setSession, Session, getConversation } from '@/lib/cache/session-manager';
 import { rateLimitMiddleware } from '@/lib/utils/rate-limiter';
 import { handleApiError, createServerError } from '@/lib/utils/error-handler';
 import { createTicket, extractTicketInfo } from '@/lib/chatbot/ticket-handler';
@@ -18,7 +18,7 @@ import { sessions } from '@/lib/database/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '@/lib/utils/logger';
-import { getAllProducts as getDemoProducts } from '@/lib/store/closelook-products';
+import { getAllProducts as getDemoProducts } from '@/lib/store/demo-products';
 
 const RequestSchema = z.object({
   sessionId: z.string().min(1),
@@ -218,8 +218,22 @@ export async function POST(req: NextRequest) {
       })(),
     ]);
 
+    // Log current product context for debugging
+    logger.info('Chat request received', {
+      sessionId,
+      message: message.substring(0, 100),
+      hasCurrentProduct: !!context.currentProduct,
+      currentProductId: context.currentProduct?.id,
+      currentProductTitle: context.currentProduct?.title || context.currentProduct?.name,
+      currentProductImage: context.currentProduct?.image,
+      shopDomain: context.shopDomain,
+    });
+
+    // Get conversation history for intent detection
+    const conversationHistory = await getConversation(sessionId).catch(() => []);
+
     // Analyze intent using BACKEND LOGIC ONLY (no AI/LLM calls)
-    const intent = await analyzeIntent(message, context.currentProduct || null, []);
+    const intent = await analyzeIntent(message, context.currentProduct || null, conversationHistory);
     
     logger.info('Intent detected (backend logic)', {
       message: message.substring(0, 100),
@@ -228,6 +242,7 @@ export async function POST(req: NextRequest) {
       wantsTicket: intent.wantsTicket,
       filters: intent.filters,
       confidence: intent.confidence,
+      hasCurrentProduct: !!context.currentProduct,
     });
 
     // Get session - second element from Promise.all is the session
@@ -247,9 +262,29 @@ export async function POST(req: NextRequest) {
 
     // Fetch all necessary data in parallel
     // FOR DEMO: Use curated demo products instead of database
+    // OPTIMIZATION: Only fetch policies if intent suggests policy-related query
+    // This reduces unnecessary database calls and token usage
+    const shouldFetchPolicies = 
+      intent.type === 'policy_query' || 
+      intent.queryType === 'policy' ||
+      (intent.type === 'question' && (
+        message.toLowerCase().includes('shipping') ||
+        message.toLowerCase().includes('delivery') ||
+        message.toLowerCase().includes('return') ||
+        message.toLowerCase().includes('refund') ||
+        message.toLowerCase().includes('exchange') ||
+        message.toLowerCase().includes('payment') ||
+        message.toLowerCase().includes('discount') ||
+        message.toLowerCase().includes('policy') ||
+        message.toLowerCase().includes('terms') ||
+        message.toLowerCase().includes('privacy')
+      ));
+    
     const [allProducts, policies, brandGuidelines] = await Promise.all([
       Promise.resolve(transformDemoProducts(getDemoProducts())), // Use demo products
-      getShopPolicies(context.shopDomain).catch(() => null),
+      shouldFetchPolicies 
+        ? getShopPolicies(context.shopDomain).catch(() => null)
+        : Promise.resolve(null), // Don't fetch if not needed
       getBrandGuidelines(context.shopDomain).catch(() => null),
     ]);
     
@@ -332,11 +367,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Build comprehensive prompt with context
+    // Include full product catalog for smart recommendations
     const prompt = buildChatPrompt(
       message,
       {
         currentProduct: context.currentProduct || null,
         recommendedProducts,
+        allProducts: allProducts, // Give LLM full catalog access for smart recommendations
         policies: policies || {},
         brandGuidelines: brandGuidelines || {},
         customer: session.customerId ? { logged_in: true, id: session.customerId } : null,
@@ -436,33 +473,53 @@ export async function POST(req: NextRequest) {
       const productsToUse = llmExtractedProducts.length > 0 ? llmExtractedProducts : recommendedProducts;
       
       if (llmExtractedProducts.length > 0) {
-        // LLM extracted specific products - match them with full product data
-        for (const llmRec of llmExtractedProducts.slice(0, 10)) {
-          const existingProduct = recommendedProducts.find(p => p.id === llmRec.id) || 
-                                  allProducts.find(p => p.id === llmRec.id);
+        // LLM extracted specific products from full catalog - match them with full product data
+        for (const llmRec of llmExtractedProducts.slice(0, 5)) {
+          const existingProduct = allProducts.find(p => p.id === llmRec.id);
           if (existingProduct) {
             finalProducts.push({
               id: existingProduct.id,
               title: existingProduct.title || existingProduct.name,
               price: existingProduct.price,
               image: existingProduct.image || existingProduct.imageUrl || existingProduct.thumbnail || existingProduct.images?.[0],
+              imageUrl: existingProduct.image || existingProduct.imageUrl || existingProduct.thumbnail || existingProduct.images?.[0],
+              thumbnail: existingProduct.image || existingProduct.imageUrl || existingProduct.thumbnail || existingProduct.images?.[0],
               category: existingProduct.category,
+              type: existingProduct.type,
+              description: existingProduct.description,
               inStock: existingProduct.inStock !== false,
-              reason: llmRec.reason,
             });
           }
         }
-      } else {
-        // Use semantic search results directly
-        for (const product of recommendedProducts.slice(0, 10)) {
-          finalProducts.push({
-            id: product.id,
-            title: product.title || product.name,
-            price: product.price,
-            image: product.image || product.imageUrl || product.thumbnail || product.images?.[0],
-            category: product.category,
-            inStock: product.inStock !== false,
-          });
+      }
+      
+      // If LLM didn't extract products or we need more, use recommended products (but filter out same category)
+      if (finalProducts.length < 5 && recommendedProducts.length > 0) {
+        const existingIds = new Set(finalProducts.map(p => p.id));
+        const currentProductCategory = context.currentProduct?.category?.toLowerCase() || '';
+        
+        for (const product of recommendedProducts) {
+          if (finalProducts.length >= 5) break;
+          if (!existingIds.has(product.id)) {
+            // Skip products from same category as current product
+            const productCategory = (product.category || '').toLowerCase();
+            if (currentProductCategory && productCategory === currentProductCategory) {
+              continue; // Skip same category products
+            }
+            
+            finalProducts.push({
+              id: product.id,
+              title: product.title || product.name,
+              price: product.price,
+              image: product.image || product.imageUrl || product.thumbnail || product.images?.[0],
+              imageUrl: product.image || product.imageUrl || product.thumbnail || product.images?.[0],
+              thumbnail: product.image || product.imageUrl || product.thumbnail || product.images?.[0],
+              category: product.category,
+              type: product.type,
+              description: product.description,
+              inStock: product.inStock !== false,
+            });
+          }
         }
       }
     }
@@ -494,6 +551,8 @@ export async function POST(req: NextRequest) {
       products: finalProducts,
       intent: intent.type,
       ticketId,
+      ticketStage: intent.ticketStage,
+      wantsTicket: intent.wantsTicket,
     });
   } catch (error: any) {
     logger.error('Chat API error', {

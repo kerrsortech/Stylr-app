@@ -25,3 +25,5 @@ export function buildIntentPrompt(intentType: Intent['type'], context: PromptCon
   return `${basePrompt}\n${productContext}${domainContext}User: ${context.message}\nAssistant:`;
 }
 
+
+

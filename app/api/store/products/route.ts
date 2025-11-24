@@ -1,70 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProductCatalog } from '@/lib/database/queries';
-
-// Use Demo Store organization shop domain
-// This links the store API to the "Stylr Demo Store" organization
-// Matches the shop domain used in lib/store/store-products.ts
-const STORE_SHOP_DOMAIN = process.env.STORE_SHOP_DOMAIN || 'demo-store.stylr.app';
-const FALLBACK_SHOP_DOMAIN = 'test-store.myshopify.com';
+import { getAllProducts as getDemoProducts } from '@/lib/store/demo-products';
 
 /**
- * Transform database product to store product format
+ * Transform demo product to store product format
  */
-function transformProduct(dbProduct: any) {
-  const variants = dbProduct.variants || {};
-  const colors = variants.color || [];
-  const sizes = variants.size || ['One Size'];
+function transformDemoProduct(demoProduct: any) {
+  // Map color string to color object with hex
+  const colorMap: Record<string, string> = {
+    'black': '#000000',
+    'white': '#FFFFFF',
+    'red': '#DC2626',
+    'blue': '#2563EB',
+    'navy': '#1E3A8A',
+    'navy blue': '#1E3A8A',
+    'grey': '#6B7280',
+    'gray': '#6B7280',
+    'green': '#10B981',
+    'brown': '#92400E',
+    'pink': '#EC4899',
+    'burgundy': '#800020',
+    'beige': '#F5F5DC',
+    'silver': '#C0C0C0',
+    'sky blue': '#87CEEB',
+    'navy/white': '#1E3A8A',
+  };
   
-  // Extract colors with hex codes if available
-  const colorOptions = Array.isArray(colors)
-    ? colors.map((c: any) => {
-        if (typeof c === 'string') {
-          // Try to map common color names to hex codes
-          const colorMap: Record<string, string> = {
-            'black': '#000000',
-            'white': '#FFFFFF',
-            'red': '#DC2626',
-            'blue': '#2563EB',
-            'navy': '#1E3A8A',
-            'grey': '#6B7280',
-            'gray': '#6B7280',
-            'green': '#10B981',
-            'brown': '#92400E',
-            'pink': '#EC4899',
-          };
-          const lowerColor = c.toLowerCase();
-          return {
-            name: c,
-            hex: colorMap[lowerColor] || '#000000',
-          };
-        }
-        return {
-          name: c.name || c.value || 'Unknown',
-          hex: c.hex || '#000000',
-        };
-      })
-    : [{ name: 'Default', hex: '#000000' }];
-
-  // Extract original price from metadata if available
-  const originalPrice = dbProduct.metadata?.originalPrice 
-    ? dbProduct.metadata.originalPrice / 100 
-    : undefined;
+  const colorName = (demoProduct.color || '').toLowerCase();
+  const colorHex = colorMap[colorName] || '#000000';
+  
+  // Map category to store category format
+  const categoryMap: Record<string, string> = {
+    'pants': 'men',
+    'shirts': 'men',
+    'shoes': 'men',
+    'coats': 'men',
+    'accessories': 'accessories',
+  };
+  
+  const storeCategory = categoryMap[demoProduct.category?.toLowerCase()] || 'men';
 
   return {
-    id: dbProduct.id,
-    name: dbProduct.title,
-    description: dbProduct.description || '',
-    price: dbProduct.price / 100, // Convert cents to dollars
-    originalPrice,
-    category: dbProduct.category?.toLowerCase() || 'uncategorized',
-    images: dbProduct.images || [],
-    colors: colorOptions,
-    sizes: Array.isArray(sizes) ? sizes : [sizes],
-    inStock: dbProduct.inStock !== false,
-    featured: dbProduct.metadata?.featured === true,
-    tags: dbProduct.tags || [],
-    vendor: dbProduct.vendor,
-    type: dbProduct.type,
+    id: demoProduct.id,
+    name: demoProduct.name,
+    description: demoProduct.description || '',
+    price: demoProduct.price,
+    category: storeCategory,
+    images: demoProduct.images || [], // These should be /Product_images/... paths from demo-products.ts
+    image: demoProduct.images?.[0] || '', // Add image field for compatibility
+    imageUrl: demoProduct.images?.[0] || '', // Add imageUrl field for compatibility
+    thumbnail: demoProduct.images?.[0] || '', // Add thumbnail field for compatibility
+    colors: [{ name: demoProduct.color || 'Default', hex: colorHex }],
+    sizes: demoProduct.sizes || ['One Size'],
+    inStock: true,
+    featured: false,
+    tags: [demoProduct.category, demoProduct.type, demoProduct.color].filter(Boolean),
+    vendor: 'Demo Store',
+    type: demoProduct.type,
   };
 }
 
@@ -75,13 +66,9 @@ export async function GET(request: NextRequest) {
     const productId = searchParams.get('id');
     const featured = searchParams.get('featured') === 'true';
 
-    // Fetch products from database
-    let products = await getProductCatalog(STORE_SHOP_DOMAIN);
-    
-    // Fallback to test-store if demo-store has no products
-    if (products.length === 0 && STORE_SHOP_DOMAIN !== FALLBACK_SHOP_DOMAIN) {
-      products = await getProductCatalog(FALLBACK_SHOP_DOMAIN);
-    }
+    // Use unified demo products directly
+    const demoProducts = getDemoProducts();
+    const products = demoProducts.map(transformDemoProduct);
 
     if (productId) {
       // Return single product
@@ -92,7 +79,7 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      return NextResponse.json(transformProduct(product));
+      return NextResponse.json(product);
     }
 
     // Filter products
@@ -105,17 +92,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (featured) {
-      filteredProducts = filteredProducts.filter(
-        (p) => p.metadata?.featured === true
-      );
+      // For now, return all products (you can add featured flag to demo products later)
+      filteredProducts = products;
     }
 
-    // Transform and return products
-    const transformedProducts = filteredProducts.map(transformProduct);
-
     return NextResponse.json({
-      products: transformedProducts,
-      total: transformedProducts.length,
+      products: filteredProducts,
+      total: filteredProducts.length,
     });
   } catch (error: any) {
     console.error('Error fetching store products:', error);

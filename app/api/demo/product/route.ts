@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDemoProductById } from '@/lib/store/demo-products';
+import { getProductById } from '@/lib/store/demo-products';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('id') || 'DEMO-AIR-MAX-90';
 
-    const product = await getDemoProductById(productId);
+    const product = getProductById(productId);
 
     if (!product) {
       return NextResponse.json(

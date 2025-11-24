@@ -4,7 +4,7 @@ import { sessions } from '@/lib/database/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/utils/logger';
 import { sanitizeErrorForClient } from '@/lib/utils/error-handler';
-import { DEMO_PORTRAIT_PHOTO_URL } from '@/lib/config/demo-photos';
+import { DEMO_PORTRAIT_PHOTO_URL, DEMO_STANDING_PHOTO_URL } from '@/lib/config/demo-photos';
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,10 +65,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the photo URL belongs to this session (privacy check)
-    // For demo: allow demo photo URL to be set
-    const isDemoPhoto = userPhotoUrl?.includes('vvapp.s3.ap-south-1.amazonaws.com');
+    // For demo: allow demo photo URLs to be set (local public folder images)
+    const isDemoPortraitPhoto = userPhotoUrl === DEMO_PORTRAIT_PHOTO_URL || userPhotoUrl?.includes('/Portrait Photo.jpg');
+    const isDemoStandingPhoto = userPhotoUrl === DEMO_STANDING_PHOTO_URL || userPhotoUrl?.includes('/Standing Photo.jpg');
+    const isDemoPhoto = isDemoPortraitPhoto || isDemoStandingPhoto;
     const isValidPhoto = 
-      isDemoPhoto || // Allow demo photo
+      isDemoPhoto || // Allow demo photos
       session.standingPhotoUrl === userPhotoUrl || 
       session.portraitPhotoUrl === userPhotoUrl;
 
@@ -85,9 +87,11 @@ export async function POST(request: NextRequest) {
       lastActivityAt: new Date(),
     };
 
-    // For demo: if it's the demo portrait photo, also save it to portraitPhotoUrl
-    if (isDemoPhoto && userPhotoUrl === DEMO_PORTRAIT_PHOTO_URL) {
+    // For demo: if it's a demo photo, also save it to the appropriate photo field
+    if (isDemoPortraitPhoto) {
       updateData.portraitPhotoUrl = DEMO_PORTRAIT_PHOTO_URL;
+    } else if (isDemoStandingPhoto) {
+      updateData.standingPhotoUrl = DEMO_STANDING_PHOTO_URL;
     }
 
     // Also update customerId if provided (for privacy)

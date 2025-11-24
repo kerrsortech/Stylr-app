@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDemoProducts } from '@/lib/store/demo-products';
+import { getAllProducts as getDemoProducts } from '@/lib/store/demo-products';
 import type { StoreProduct } from '@/lib/store/store-products';
 
 /**

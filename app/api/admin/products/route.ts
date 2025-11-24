@@ -6,6 +6,7 @@ import { eq, sql } from 'drizzle-orm';
 import { handleApiError } from '@/lib/utils/error-handler';
 import { logger } from '@/lib/utils/logger';
 import { getAllProducts } from '@/lib/integrations/catalog-fetcher';
+import { demoProducts } from '@/lib/store/demo-products';
 
 // GET - Get product catalog for organization
 // Fetches from catalog sources first, then falls back to database
@@ -102,6 +103,32 @@ export async function GET(req: NextRequest) {
       inStock: p.inStock !== false,
       metadata: p.metadata || {},
     }));
+
+    // If no products found in database, fall back to demo products
+    if (products.length === 0) {
+      const demoProductsList = demoProducts.slice(offset, offset + limit);
+      products = demoProductsList.map(p => ({
+        id: p.id,
+        title: p.name,
+        description: p.description || '',
+        price: Math.round(p.price * 100), // Convert to cents
+        category: p.category || '',
+        type: p.type || '',
+        vendor: 'Demo Store',
+        tags: [p.color, p.type].filter(Boolean),
+        images: p.images || [],
+        variants: {
+          sizes: p.sizes || [],
+          color: p.color || '',
+        },
+        inStock: true,
+        metadata: {
+          color: p.color,
+          sizes: p.sizes,
+        },
+      }));
+      total = demoProducts.length;
+    }
 
     return NextResponse.json({
       products,

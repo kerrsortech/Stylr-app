@@ -30,7 +30,7 @@ export async function analyzeIntent(
 ): Promise<Intent> {
   // Use ONLY rule-based backend logic for intent detection
   // NO AI/LLM calls for intent analysis - this is pure backend logic
-  return fallbackIntentDetection(message, currentProduct);
+  return fallbackIntentDetection(message, currentProduct, conversationHistory);
 }
 
 /**
@@ -38,9 +38,31 @@ export async function analyzeIntent(
  */
 function fallbackIntentDetection(
   message: string,
-  currentProduct: any | null
+  currentProduct: any | null,
+  conversationHistory: Array<{ role: string; content: string }> = []
 ): Intent {
   const lower = message.toLowerCase().trim();
+  
+  // Check if user is confirming a ticket creation offer
+  // Look at the last assistant message to see if it was offering to create a ticket
+  const lastAssistantMessage = conversationHistory
+    .filter(m => m.role === 'assistant')
+    .slice(-1)[0];
+  
+  const wasTicketOffer = lastAssistantMessage && (
+    lastAssistantMessage.content.toLowerCase().includes('create a support ticket') ||
+    lastAssistantMessage.content.toLowerCase().includes('create a ticket') ||
+    lastAssistantMessage.content.toLowerCase().includes('support ticket') ||
+    lastAssistantMessage.content.toLowerCase().includes('would you like me to do that') ||
+    lastAssistantMessage.content.toLowerCase().includes('help you with that') ||
+    lastAssistantMessage.content.toLowerCase().includes('can help create')
+  );
+  
+  // Check if user is confirming with "yes", "y", "sure", "ok", "okay"
+  const isConfirmation = /^(yes|y|sure|ok|okay|yeah|yep|absolutely|definitely)$/i.test(lower.trim());
+  
+  // If user confirms after a ticket offer, set ticket stage to 'awaiting_confirmation'
+  const isTicketConfirmation = isConfirmation && wasTicketOffer;
 
   // Greeting patterns - if it's just a greeting, it's a question (not a search)
   const greetingPatterns = [
@@ -85,7 +107,7 @@ function fallbackIntentDetection(
     'talk to agent',
     'speak to agent',
   ];
-  const wantsTicket = ticketPatterns.some(pattern => lower.includes(pattern));
+  const wantsTicket = ticketPatterns.some(pattern => lower.includes(pattern)) || isTicketConfirmation;
 
   // Search patterns - expanded to catch product queries
   const searchPatterns = [
@@ -113,10 +135,34 @@ function fallbackIntentDetection(
   ];
   const wantsRecommendations = recPatterns.some(pattern => lower.includes(pattern));
 
-  // Policy query patterns
+  // Policy query patterns - expanded to catch more policy-related queries
   const policyPatterns = [
-    'shipping', 'delivery', 'return policy', 'refund policy', 
-    'exchange', 'warranty', 'terms', 'privacy'
+    // Shipping & Delivery
+    'shipping', 'delivery', 'ship', 'dispatch', 'tracking', 'track', 'carrier',
+    'express shipping', 'standard shipping', 'international shipping',
+    'how long', 'when will', 'delivery time', 'shipping time', 'shipping cost',
+    'free shipping', 'shipping fee', 'shipping charge',
+    
+    // Returns & Refunds
+    'return policy', 'refund policy', 'return', 'refund', 'exchange', 'exchange policy',
+    'can i return', 'how to return', 'return window', 'return item',
+    'get refund', 'refund process', 'return shipping', 'restocking fee',
+    'damaged item', 'wrong item', 'defective', 'broken',
+    
+    // Payments & Discounts
+    'payment', 'pay', 'payment method', 'payment options', 'accepted payment',
+    'discount', 'discount code', 'promo code', 'coupon', 'student discount',
+    'klarna', 'clearpay', 'paypal', 'apple pay', 'google pay',
+    'buy now pay later', 'pay in 3',
+    
+    // General Policies
+    'policy', 'policies', 'terms', 'terms of service', 'privacy', 'privacy policy',
+    'warranty', 'guarantee', 'customer service', 'support policy',
+    'holiday returns', 'extended returns', 'return condition',
+    
+    // Order-related policy questions
+    'order processing', 'when will my order', 'order status', 'order tracking',
+    'cancel order', 'change order', 'modify order',
   ];
   const isPolicyQuery = policyPatterns.some(pattern => lower.includes(pattern));
 
@@ -182,15 +228,27 @@ function fallbackIntentDetection(
   const shouldWantRecommendations = wantsRecommendations || 
     (type === 'search' && (isSearch || hasProductKeyword));
 
+  // Determine ticket stage
+  let ticketStage: Intent['ticketStage'] = null;
+  if (isTicketConfirmation) {
+    // User confirmed ticket creation - move to awaiting_confirmation stage
+    ticketStage = 'awaiting_confirmation';
+    type = 'ticket_creation';
+  } else if (wantsTicket) {
+    // User wants a ticket but hasn't confirmed yet
+    ticketStage = 'offer';
+    type = 'ticket_creation';
+  }
+
   return {
     type,
     confidence: 0.85, // Higher confidence for rule-based detection
     wantsRecommendations: shouldWantRecommendations,
-    wantsTicket,
-    ticketStage: wantsTicket ? 'offer' : null,
+    wantsTicket: wantsTicket || isTicketConfirmation,
+    ticketStage,
     filters,
     queryType: isPolicyQuery ? 'policy' : 'product',
-    sentiment: wantsTicket ? 'frustrated' : 'neutral',
+    sentiment: wantsTicket || isTicketConfirmation ? 'frustrated' : 'neutral',
   };
 }
 

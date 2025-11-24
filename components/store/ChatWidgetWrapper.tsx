@@ -45,18 +45,31 @@ export function ChatWidgetWrapper() {
         })
         .then(product => {
           if (product?.id) {
-            // Ensure we have the image - try multiple possible fields
-            const productImage = product.images?.[0] || 
-                                product.image || 
-                                product.imageUrl || 
-                                product.thumbnail || 
-                                '';
+            // Ensure we have the image - prioritize images array, then fallback to other fields
+            // The image should be from /Product_images/ folder for demo products
+            let productImage = product.images?.[0] || 
+                              product.image || 
+                              product.imageUrl || 
+                              product.thumbnail || 
+                              '';
+            
+            // Ensure relative paths are preserved (they'll be resolved to absolute in try-on)
+            // For demo products, images should be like /Product_images/Navy Chinos.jpg
+            if (productImage && !productImage.startsWith('http') && !productImage.startsWith('/')) {
+              // If it's not a full URL and not a relative path, it might be just a filename
+              // Check if it looks like a Product_images filename
+              if (productImage.includes('.jpg') || productImage.includes('.jpeg') || productImage.includes('.png')) {
+                productImage = `/Product_images/${productImage}`;
+              }
+            }
             
             console.log('Setting current product:', {
               id: product.id,
               name: product.name || product.title,
               hasImage: !!productImage,
+              imagePath: productImage,
               images: product.images,
+              isLocalImage: productImage.startsWith('/Product_images/'),
             });
             
             setCurrentProduct({
@@ -64,7 +77,7 @@ export function ChatWidgetWrapper() {
               title: product.name || product.title,
               name: product.name || product.title, // Add name field for compatibility
               price: Math.round((product.price || 0) * 100),
-              image: productImage,
+              image: productImage, // This should be /Product_images/... for demo products
               images: product.images || [], // Keep images array for reference
               category: product.category,
               type: product.type,

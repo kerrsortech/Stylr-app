@@ -1,7 +1,6 @@
 import { Suspense } from 'react';
 import { ProductCard } from '@/components/store/ProductCard';
 import { getStoreProducts, getStoreProductsByCategory } from '@/lib/store/store-products';
-import Image from 'next/image';
 
 interface StorePageProps {
   searchParams: { category?: string };
@@ -23,8 +22,8 @@ async function ProductGrid({ category }: { category?: string }) {
     });
   }
 
-  // Limit to 10 products for landing page if no category filter
-  const displayProducts = category ? products : products.slice(0, 10);
+  // Show all products (no limit)
+  const displayProducts = products;
 
   if (displayProducts.length === 0) {
     return (
@@ -51,21 +50,23 @@ export default function StorePage({ searchParams }: StorePageProps) {
       {/* Hero Section */}
       <section className="relative h-[600px] bg-gradient-to-br from-gray-900 to-gray-700 text-white overflow-hidden">
         <div className="absolute inset-0">
-          <Image
-            src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1920&h=1080&fit=crop"
-            alt="Hero"
-            fill
-            className="object-cover opacity-50"
-            priority
-          />
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover opacity-50"
+          >
+            <source src="/Landing_video.mp4" type="video/mp4" />
+          </video>
         </div>
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center">
           <div className="max-w-2xl">
             <h1 className="text-5xl md:text-6xl font-bold mb-6">
-              Just Do It.
+              Style Your Way
             </h1>
             <p className="text-xl md:text-2xl mb-8 text-gray-200">
-              Find Your Perfect Fit
+              Discover your perfect fit with AI-powered virtual try-on
             </p>
             <a
               href="#products"
@@ -82,12 +83,12 @@ export default function StorePage({ searchParams }: StorePageProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              {category ? `${category.charAt(0).toUpperCase() + category.slice(1)}'s Collection` : 'Featured Products'}
+              {category ? `${category.charAt(0).toUpperCase() + category.slice(1)}'s Collection` : 'All Products'}
             </h2>
             <p className="text-gray-600">
               {category
                 ? `Discover our latest ${category} collection`
-                : 'Shop the latest styles and innovations'}
+                : 'Browse our complete collection of premium fashion items'}
             </p>
           </div>
 

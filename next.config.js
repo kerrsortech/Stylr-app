@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Try to work around macOS Sequoia permission issues
+  swcMinify: true,
+  compiler: {
+    // Use Babel as fallback if SWC has issues
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
   images: {
     domains: ['replicate.delivery', 'pbxt.replicate.delivery', '*.amazonaws.com'],
     remotePatterns: [

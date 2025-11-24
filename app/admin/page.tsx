@@ -129,6 +129,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // Product users state
+  const [selectedProduct, setSelectedProduct] = useState<{ productId: string; name: string } | null>(null);
+  const [productUsers, setProductUsers] = useState<Array<{ name: string; email: string; triedOnAt: string }>>([]);
+  const [productUsersLoading, setProductUsersLoading] = useState(false);
+  
   // Catalog sources state
   const [catalogSources, setCatalogSources] = useState<any[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -287,6 +292,40 @@ If the server is running on a different port, make sure you're accessing the adm
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchProductUsers = async (productId: string, productName: string) => {
+    if (!adminEmail) return;
+    
+    setProductUsersLoading(true);
+    setSelectedProduct({ productId, name: productName });
+    
+    const apiUrl = getApiUrl();
+    try {
+      const response = await fetch(`${apiUrl}/api/admin/analytics/product-users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          adminEmail,
+          productId 
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch product users');
+      }
+
+      const data = await response.json();
+      setProductUsers(data.users || []);
+    } catch (err: any) {
+      console.error('Error fetching product users:', err);
+      setError('Failed to load product users');
+      setProductUsers([]);
+    } finally {
+      setProductUsersLoading(false);
     }
   };
 
@@ -947,6 +986,44 @@ If the server is running on a different port, make sure you're accessing the adm
     }
   };
 
+  // Get product image path based on product name
+  const getProductImage = (productName: string, productImage?: string | null) => {
+    // If product has an image URL, use it
+    if (productImage) {
+      return productImage;
+    }
+    
+    // Map product names to image filenames (matching demo-products.ts)
+    const imageMap: Record<string, string> = {
+      'Oxford Navy Chinos': '/Product_images/Navy Chinos.jpg',
+      'Sky Blue Cotton Shirt': '/Product_images/Blue Cotton Shirt.jpg',
+      'Derby Formal Shoes': '/Product_images/Derby Formal Shoes.jpg',
+      'Navy Slim Fit Blazer': '/Product_images/Navy Slim Fit Blazer.jpg',
+      'Burgundy Textured Tie': '/Product_images/Burgundy Textured Tie.jpg',
+      'Classic White Dress Shirt': '/Product_images/Classic White Dress Shirt.jpg',
+      'Cognac Leather Belt': '/Product_images/Cognac Leather Belt.jpg',
+      'Charcoal Wool Trousers': '/Product_images/Charcoal Wool Trousers.jpg',
+      'Brown Leather Oxfords': '/Product_images/Brown Leather Oxfords.jpg',
+      'Navy Puffer Jacket': '/Product_images/Navy Puffer Jacket.jpg',
+      'Slim Fit Blue Jeans': '/Product_images/Slim Fit Blue Jeans.jpg',
+      'Beige Trench Coat': '/Product_images/Beige Trench Coat.jpg',
+      'Grey Knit Hoodie': '/Product_images/Grey Knit Hoodie.jpg',
+      'White Minimalist Sneakers': '/Product_images/White Minimalist Sneakers.jpg',
+      'Wayfarer Sunglasses': '/Product_images/Wayfarer Sunglasses.avif',
+      'Navy Wool Beanie': '/Product_images/Navy Wool Beanie.jpg',
+      'Silver Silk Tie': '/Product_images/Silver Silk Tie.jpg',
+      'Casual Striped T-Shirt': '/Product_images/Casual Striped T-Shirt.jpg',
+      'Black Chelsea Boots': '/Product_images/Black Chelsea Boots.jpg',
+      'Textured Grey Blazer': '/Product_images/Textured Grey Blazer.jpg',
+      'Premium Italian Wool Blazer': '/Product_images/Premium Italian Wool Blazer.jpg',
+      'Basic Structured Blazer': '/Product_images/Basic Structured Blazer.jpg',
+      '100% Linen Blazer': '/Product_images/Linen Blazer.jpg',
+      'Grey Houndstooth Blazer': '/Product_images/Grey Houndstooth Blazer.jpg',
+    };
+    
+    return imageMap[productName] || '/placeholder.svg?height=800&width=800';
+  };
+
   const getCategoryIcon = (category: string) => {
     const categoryLower = category.toLowerCase();
     if (categoryLower.includes('jacket') || categoryLower.includes('coat')) {
@@ -1176,12 +1253,32 @@ If the server is running on a different port, make sure you're accessing the adm
                         className="grid grid-cols-12 gap-4 items-center py-3 px-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                       >
                         <div className="col-span-1">
-                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg">
-                            {getCategoryIcon(product.category)}
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                            <img
+                              src={getProductImage(product.name, product.image)}
+                              alt={product.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                // Fallback to category icon if image fails to load
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  parent.innerHTML = '';
+                                  parent.className = 'w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-lg';
+                                  parent.textContent = getCategoryIcon(product.category);
+                                }
+                              }}
+                            />
                           </div>
                         </div>
                         <div className="col-span-4">
-                          <p className="font-medium text-sm">{product.name}</p>
+                          <button
+                            onClick={() => fetchProductUsers(product.productId, product.name)}
+                            className="font-medium text-sm text-left hover:text-primary hover:underline cursor-pointer transition-colors"
+                          >
+                            {product.name}
+                          </button>
                         </div>
                         <div className="col-span-2">
                           <p className="text-sm text-muted-foreground">{product.category}</p>
@@ -1209,6 +1306,120 @@ If the server is running on a different port, make sure you're accessing the adm
                 )}
               </CardContent>
             </Card>
+
+            {/* Product Users Dialog */}
+            <Dialog open={!!selectedProduct} onOpenChange={(open) => !open && setSelectedProduct(null)}>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <DialogTitle>Users Who Tried On: {selectedProduct?.name}</DialogTitle>
+                      <DialogDescription>
+                        View all users who have tried on this product
+                      </DialogDescription>
+                    </div>
+                    {productUsers.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Generate CSV content
+                          const headers = ['#', 'Name', 'Email', 'Tried On'];
+                          const rows = productUsers.map((user, index) => {
+                            const triedOnDate = new Date(user.triedOnAt);
+                            const formattedDate = triedOnDate.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            });
+                            return [index + 1, user.name, user.email, formattedDate];
+                          });
+                          
+                          const csvContent = [
+                            headers.join(','),
+                            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+                          ].join('\n');
+                          
+                          // Create download link
+                          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                          const link = document.createElement('a');
+                          const url = URL.createObjectURL(blob);
+                          link.setAttribute('href', url);
+                          link.setAttribute('download', `${selectedProduct?.name.replace(/\s+/g, '_')}_users.csv`);
+                          link.style.visibility = 'hidden';
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export as CSV
+                      </Button>
+                    )}
+                  </div>
+                </DialogHeader>
+                
+                {productUsersLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : productUsers.length > 0 ? (
+                  <div className="space-y-2">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-12 gap-4 pb-2 border-b text-sm text-muted-foreground">
+                      <div className="col-span-1">#</div>
+                      <div className="col-span-4">Name</div>
+                      <div className="col-span-4">Email</div>
+                      <div className="col-span-3">Tried On</div>
+                    </div>
+                    {/* Table Rows */}
+                    {productUsers.map((user, index) => {
+                      const triedOnDate = new Date(user.triedOnAt);
+                      const formattedDate = triedOnDate.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+                      
+                      return (
+                        <div
+                          key={index}
+                          className="grid grid-cols-12 gap-4 items-center py-3 px-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="col-span-1 text-sm text-muted-foreground">
+                            {index + 1}
+                          </div>
+                          <div className="col-span-4">
+                            <p className="font-medium text-sm">{user.name}</p>
+                          </div>
+                          <div className="col-span-4">
+                            <p className="text-sm text-muted-foreground">{user.email}</p>
+                          </div>
+                          <div className="col-span-3">
+                            <p className="text-sm text-muted-foreground">{formattedDate}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>No users found for this product</p>
+                  </div>
+                )}
+                
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setSelectedProduct(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Catalog Tab */}
@@ -1365,11 +1576,10 @@ If the server is running on a different port, make sure you're accessing the adm
                           {/* Table Header */}
                           <div className="grid grid-cols-12 gap-4 p-4 bg-muted/50 border-b text-sm font-medium">
                             <div className="col-span-1"></div>
-                            <div className="col-span-4">Product</div>
+                            <div className="col-span-5">Product</div>
                             <div className="col-span-2">Category</div>
                             <div className="col-span-2">Vendor</div>
                             <div className="col-span-2 text-right">Price</div>
-                            <div className="col-span-1 text-center">Stock</div>
                           </div>
                           {/* Table Rows */}
                           <div className="divide-y">
@@ -1401,7 +1611,7 @@ If the server is running on a different port, make sure you're accessing the adm
                                       </div>
                                     )}
                                   </div>
-                                  <div className="col-span-4">
+                                  <div className="col-span-5">
                                     <div className="font-medium">{product.title || 'Untitled Product'}</div>
                                     {product.description && (
                                       <div className="text-sm text-muted-foreground line-clamp-1 mt-1">
@@ -1417,17 +1627,6 @@ If the server is running on a different port, make sure you're accessing the adm
                                   </div>
                                   <div className="col-span-2 text-right font-medium">
                                     ${((product.price || 0) / 100).toFixed(2)}
-                                  </div>
-                                  <div className="col-span-1 text-center">
-                                    {product.inStock !== false ? (
-                                      <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                        In Stock
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                        Out of Stock
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
                               ))
